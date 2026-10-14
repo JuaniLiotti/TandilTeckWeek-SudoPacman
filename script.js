@@ -87,43 +87,54 @@
     });
   }
 
-  // ---------- Piedra movediza ----------
-  const piedra = document.getElementById('piedra');
-  if (piedra) {
-    piedra.addEventListener('click', () => {
-      piedra.classList.add('shake');
-      const x = (Math.random()*60-30)|0;
-      const y = (Math.random()*60-30)|0;
-      piedra.style.transform = `translate(${x}px,${y}px) rotate(${Math.random()*40-20}deg)`;
-      setTimeout(() => { piedra.classList.remove('shake'); piedra.style.transform=''; }, 900);
-      // chance spawn carpincho/salamin
-      if (Math.random() < 0.4) spawnCarpincho();
-      if (Math.random() < 0.4) showSalamin();
-    });
-  }
-
   // ---------- Carpincho ----------
   const carpincho = document.getElementById('carpincho');
   function spawnCarpincho() {
-    if (!carpincho || carpincho.classList.contains('walk')) return;
-    carpincho.style.right = '-200px';
-    carpincho.classList.remove('walk');
-    void carpincho.offsetWidth;
-    carpincho.classList.add('walk');
-    setTimeout(() => carpincho.classList.remove('walk'), 4500);
+    if (!carpincho || carpincho.classList.contains('peek')) return;
+    carpincho.classList.add('peek');
+    setTimeout(() => carpincho.classList.remove('peek'), 2600);
   }
-  setInterval(() => { if (Math.random() < 0.28) spawnCarpincho(); }, 20000);
+  if (carpincho) {
+    carpincho.addEventListener('click', () => {
+      try { openModal('modalBrick'); } catch(e){}
+      setTimeout(() => { try { startBrick(); } catch(e){} }, 80);
+    });
+  }
+  setTimeout(spawnCarpincho, 3000);
+  setInterval(() => { if (Math.random() < 0.6) spawnCarpincho(); }, 12000);
 
-  // ---------- Salamin ----------
-  const salamin = document.getElementById('salamin');
-  function showSalamin() {
-    if (!salamin) return;
-    salamin.classList.add('show');
-    setTimeout(() => salamin.classList.remove('show'), 2500);
+  // ---------- Salame rain ----------
+
+  function rainSalames(count = 8) {
+    for (let i=0; i<count; i++) {
+      const img = document.createElement('img');
+      img.src = 'assets/salame.webp';
+      img.className = 'salame-rain';
+      img.alt = '';
+      img.style.left = (6 + Math.random()*86) + 'vw';
+      img.style.width = (40 + Math.random()*40) + 'px';
+      img.style.animationDuration = (1.8 + Math.random()*1.4) + 's';
+      img.style.animationDelay = (i * 0.12) + 's';
+      img.style.transform = `rotate(${(Math.random()*80-40)}deg)`;
+      document.body.appendChild(img);
+      img.addEventListener('animationend', () => img.remove());
+    }
   }
-  document.querySelectorAll('.org-card,.sponsor-card,.card').forEach(c => {
-    c.addEventListener('mouseenter', () => { if (Math.random() < 0.25) showSalamin(); });
+  // Lluvia de salamines solo con spam de clicks (4 clicks en <1.5s, cooldown 800ms)
+  const clickTimes = [];
+  let lastRainSpam = 0;
+  document.addEventListener('click', () => {
+    const now = Date.now();
+    clickTimes.push(now);
+    while (clickTimes.length && now - clickTimes[0] > 1500) clickTimes.shift();
+    if (clickTimes.length >= 4 && now - lastRainSpam > 800) {
+      lastRainSpam = now;
+      clickTimes.length = 0;
+      rainSalames(9);
+    }
   });
+
+  // Realistic salamin on logo click
 
   // ---------- Swatches ----------
   // already bound above, but ensure default
@@ -163,8 +174,8 @@
   function handleCmd(cmd){
     const c = cmd.split(' ')[0];
     switch(c){
-      case 'help': termPrint('comandos: help, hack, play pacman, play brick, matrix, theme bosque|cueva|atardecer, piedra, carpincho, clear, whoami'); break;
-      case 'hack': termPrint('acceso concedido ▓▓▓ (próximamente speakers)'); showSalamin(); spawnCarpincho(); break;
+      case 'help': termPrint('comandos: help, hack, play pacman, play brick, matrix, theme bosque|cueva|atardecer|cyberpunk|terraria|undertale|balatro|davediver, carpincho, salame, clear, whoami\nsecretos: Konami Code -> Pac-Man; click en carpincho -> Brick Breaker; click en letras del titulo -> caida; spam de clicks -> lluvia de salamines'); break;
+      case 'hack': termPrint('acceso concedido ▓▓▓ (próximamente speakers)'); spawnCarpincho(); break;
       case 'play':
         if (cmd.includes('brick')) { openModal('modalBrick'); startBrick(); }
         else if (cmd.includes('pac')) { openModal('modalPac'); startPac(); }
@@ -176,8 +187,8 @@
         if (['bosque','cueva','atardecer'].includes(t)){ root.dataset.theme=t; termPrint('tema -> '+t); }
         else termPrint('tema desconocido');
         break;
-      case 'piedra': if(piedra) piedra.click(); break;
       case 'carpincho': spawnCarpincho(); break;
+      case 'salame': rainSalames(9); break;
       case 'clear': if(termOut) termOut.textContent=''; break;
       case 'whoami': termPrint('founder de TandilTechWeek 🧉'); break;
       default: if(cmd) termPrint('comando no encontrado: '+cmd);
@@ -201,110 +212,221 @@
   let pacRunning=false, pacAnim=null;
   const pacCanvas = document.getElementById('pacCanvas');
   const pacCtx = pacCanvas ? pacCanvas.getContext('2d') : null;
-  const CELL=16, COLS=21, ROWS=21;
-  let pac = {x:10,y:10,dx:0,dy:0,nextDx:0,nextDy:0};
+  const CELL=12, COLS=28, ROWS=31;
+  // Laberinto clásico de Pac-Man (28x31): # pared, . pastilla, o power pellet, - puerta casa, espacio vacío
+  const PAC_MAZE = [
+    "############################",
+    "#............##............#",
+    "#.####.#####.##.#####.####.#",
+    "#o####.#####.##.#####.####o#",
+    "#.####.#####.##.#####.####.#",
+    "#..........................#",
+    "#.####.##.########.##.####.#",
+    "#.####.##.########.##.####.#",
+    "#......##....##....##......#",
+    "######.#####.##.#####.######",
+    "######.#####.##.#####.######",
+    "######.##..........##.######",
+    "######.##.###--###.##.######",
+    "######.##.#      #.##.######",
+    "..........#      #..........",
+    "######.##.#      #.##.######",
+    "######.##.########.##.######",
+    "######.##..........##.######",
+    "######.##.########.##.######",
+    "######.##.########.##.######",
+    "#............##............#",
+    "#.####.#####.##.#####.####.#",
+    "#.####.#####.##.#####.####.#",
+    "#o..##.......  .......##..o#",
+    "###.##.##.########.##.##.###",
+    "###.##.##.########.##.##.###",
+    "#......##....##....##......#",
+    "#.##########.##.##########.#",
+    "#.##########.##.##########.#",
+    "#..........................#",
+    "############################"
+  ];
+  let pac = {x:13,y:23,dx:0,dy:0,nextDx:0,nextDy:0};
   let ghosts = [];
   let pills = [];
   let pacScore=0, pacLives=3, pacHigh = +(localStorage.getItem('ttw-pac-high')||0);
+  let pacGrid = [];
 
-  function initPac() {
-    pacScore=0; pacLives=3;
-    pac.x=10; pac.y=10; pac.dx=0; pac.dy=0; pac.nextDx=0; pac.nextDy=0;
-    ghosts = [
-      {x:9,y:9,dx:1,dy:0,color:'#ff7a6b'},
-      {x:11,y:9,dx:-1,dy:0,color:'#ffd166'},
-      {x:10,y:11,dx:0,dy:-1,color:'#9bc9e5'}
-    ];
-    pills=[];
-    const wall = new Set();
-    // simple border + a couple bars
-    for (let x=0;x<COLS;x++){wall.add(x+','+0);wall.add(x+','+(ROWS-1));}
-    for (let y=0;y<ROWS;y++){wall.add(0+','+y);wall.add((COLS-1)+','+y);}
-    for (let x=3;x<COLS-3;x++){ if (x!==10){ wall.add(x+',6'); wall.add(x+',14'); } }
-    for (let y=3;y<ROWS-3;y++){ if (y!==10){ wall.add('6,'+y); wall.add('14,'+y); } }
-    // pills elsewhere
-    for (let y=1;y<ROWS-1;y++) for (let x=1;x<COLS-1;x++) if (!wall.has(x+','+y)) pills.push({x,y,eaten:false});
-    drawPac();
-    document.getElementById('pacInfo').textContent = `Score ${pacScore} · Vidas ${pacLives} · Record ${pacHigh}`;
+  function shufflePac(arr){
+    for(let i=arr.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+    return arr;
   }
-  function pacMove(dx,dy){
-    const nx=pac.x+dx, ny=pac.y+dy;
-    if (isWall(nx,ny)) return false;
-    pac.x=nx; pac.y=ny; return true;
+
+  function buildPacMaze(){
+    return PAC_MAZE.map(row => row.split(''));
   }
+
   function isWall(x,y){
-    if (x<0||y<0||x>=COLS||y>=ROWS) return true;
-    // reuse generator
-    const wall = pacWalls();
-    return wall.has(x+','+y);
+    if(y<0||y>=ROWS) return true;
+    x=(x+COLS)%COLS; // túnel lateral: wrap
+    const c=pacGrid[y] && pacGrid[y][x];
+    return c===undefined || c==='#' || c==='-';
   }
-  let wallSet=null;
-  function pacWalls(){
-    if (wallSet) return wallSet;
-    wallSet=new Set();
-    for (let x=0;x<COLS;x++){wallSet.add(x+','+0);wallSet.add(x+','+(ROWS-1));}
-    for (let y=0;y<ROWS;y++){wallSet.add(0+','+y);wallSet.add((COLS-1)+','+y);}
-    for (let x=3;x<COLS-3;x++){ if (x!==10){ wallSet.add(x+',6'); wallSet.add(x+',14'); } }
-    for (let y=3;y<ROWS-3;y++){ if (y!==10){ wallSet.add('6,'+y); wallSet.add('14,'+y); } }
-    return wallSet;
+
+  function drawWall(x,y){
+    pacCtx.fillStyle='#2121de';
+    pacCtx.fillRect(x*CELL,y*CELL,CELL,CELL);
+    pacCtx.strokeStyle='#0a1030';
+    pacCtx.lineWidth=2;
+    pacCtx.strokeRect(x*CELL+1,y*CELL+1,CELL-2,CELL-2);
   }
-  function drawPac() {
-    if (!pacCtx) return;
-    pacCtx.fillStyle='#0a1216'; pacCtx.fillRect(0,0,pacCanvas.width,pacCanvas.height);
-    const walls=pacWalls();
-    pacCtx.fillStyle='#5fa36a';
-    walls.forEach(k=>{const [x,y]=k.split(',').map(Number); pacCtx.fillRect(x*CELL,y*CELL,CELL,CELL);});
-    // pills
-    pacCtx.fillStyle='#f2c14e';
-    pills.forEach(p=>{ if(!p.eaten) pacCtx.fillRect(p.x*CELL+6,p.y*CELL+6,4,4); });
-    // pacman
+
+  function drawPacShape(x,y,dir,mouth){
+    const cx=x*CELL+CELL/2, cy=y*CELL+CELL/2, r=CELL/2-1;
+    let angle=0;
+    if(dir.dx===-1) angle=Math.PI;
+    else if(dir.dy===-1) angle=-Math.PI/2;
+    else if(dir.dy===1) angle=Math.PI/2;
+    pacCtx.beginPath();
+    pacCtx.moveTo(cx,cy);
+    pacCtx.arc(cx,cy,r, angle+mouth, angle-mouth, false);
+    pacCtx.closePath();
     pacCtx.fillStyle='#ffd166';
-    pacCtx.fillRect(pac.x*CELL+2,pac.y*CELL+2,CELL-4,CELL-4);
-    // ghosts
-    ghosts.forEach(g=>{ pacCtx.fillStyle=g.color; pacCtx.fillRect(g.x*CELL+2,g.y*CELL+2,CELL-4,CELL-4); });
+    pacCtx.fill();
   }
+
+  function drawGhostShape(x,y,color){
+    const px=x*CELL+1, py=y*CELL+1, w=CELL-2, h=CELL-2;
+    pacCtx.beginPath();
+    pacCtx.arc(px+w/2, py+h/2, w/2, Math.PI, 0);
+    pacCtx.lineTo(px+w, py+h);
+    pacCtx.lineTo(px, py+h);
+    pacCtx.closePath();
+    pacCtx.fillStyle=color;
+    pacCtx.fill();
+    pacCtx.fillStyle='#fff';
+    pacCtx.beginPath();
+    pacCtx.arc(px+w/2-3, py+h/2, 2.2, 0, Math.PI*2);
+    pacCtx.arc(px+w/2+3, py+h/2, 2.2, 0, Math.PI*2);
+    pacCtx.fill();
+    pacCtx.fillStyle='#222';
+    pacCtx.beginPath();
+    pacCtx.arc(px+w/2-3, py+h/2, 1, 0, Math.PI*2);
+    pacCtx.arc(px+w/2+3, py+h/2, 1, 0, Math.PI*2);
+    pacCtx.fill();
+  }
+
+  function drawPac(){
+    if(!pacCtx) return;
+    pacCtx.fillStyle='#0a1216';
+    pacCtx.fillRect(0,0,pacCanvas.width,pacCanvas.height);
+    for(let y=0;y<ROWS;y++){
+      for(let x=0;x<COLS;x++){
+        if(pacGrid[y][x]==='#') drawWall(x,y);
+      }
+    }
+    pacCtx.fillStyle='#ffb897';
+    pills.forEach(p=>{
+      if(!p.eaten){
+        pacCtx.beginPath();
+        pacCtx.arc(p.x*CELL+CELL/2, p.y*CELL+CELL/2, p.power?4:2, 0, Math.PI*2);
+        pacCtx.fill();
+      }
+    });
+    const mouth = 0.22 + Math.abs(Math.sin(performance.now()/120))*0.22;
+    drawPacShape(pac.x,pac.y,pac,mouth);
+    ghosts.forEach(g=>drawGhostShape(g.x,g.y,g.color));
+  }
+
+  function updatePacHud(){
+    const livesEl=document.getElementById('pacLives');
+    if(livesEl) livesEl.textContent='Vidas: ' + '♥'.repeat(Math.max(0,pacLives));
+    const info=document.getElementById('pacInfo');
+    if(info) info.textContent=`Score ${pacScore} · Record ${pacHigh}`;
+  }
+
+  function initPac(){
+    pacScore=0; pacLives=3;
+    pacGrid=buildPacMaze();
+    pills=[];
+    for(let y=0;y<ROWS;y++){
+      for(let x=0;x<COLS;x++){
+        const c=pacGrid[y][x];
+        if(c==='.') pills.push({x,y,eaten:false,power:false});
+        else if(c==='o') pills.push({x,y,eaten:false,power:true});
+      }
+    }
+    pac.x=13; pac.y=23; pac.dx=0; pac.dy=0; pac.nextDx=0; pac.nextDy=0;
+    ghosts=[
+      {x:12,y:13,house:true,color:'#ff5f5f'},
+      {x:14,y:13,house:true,color:'#ffb347'},
+      {x:13,y:14,house:true,color:'#4fc3f7'}
+    ];
+    updatePacHud();
+    drawPac();
+  }
+
   function startPac(){
     initPac(); pacRunning=true;
     if (pacAnim) cancelAnimationFrame(pacAnim);
-    let tick=0;
-    function step(){
+    let tick=0, lastMove=0;
+    function step(ts){
       if (!pacRunning) return;
-      // input buffer
-      if (pac.nextDx!==0||pac.nextDy!==0){
-        if (!isWall(pac.x+pac.nextDx,pac.y+pac.nextDy)){ pac.dx=pac.nextDx; pac.dy=pac.nextDy; pac.nextDx=0; pac.nextDy=0; }
+      if (!lastMove) lastMove=ts;
+      const shouldMove = (ts - lastMove) >= 135;
+      if (shouldMove) lastMove = ts;
+      if (shouldMove) {
+        if(pac.nextDx!==0||pac.nextDy!==0){
+          if(!isWall(pac.x+pac.nextDx,pac.y+pac.nextDy)){
+            pac.dx=pac.nextDx; pac.dy=pac.nextDy;
+            pac.nextDx=0; pac.nextDy=0;
+          }
+        }
+        if(pac.dx||pac.dy){
+          const nx=(pac.x+pac.dx+COLS)%COLS, ny=pac.y+pac.dy;
+          if(!isWall(nx,ny)){ pac.x=nx; pac.y=ny; }
+          else { pac.dx=0; pac.dy=0; }
+        }
+        const pill = pills.find(p=>!p.eaten && p.x===pac.x && p.y===pac.y);
+        if(pill){ pill.eaten=true; pacScore+=pill.power?50:10; }
+        if(tick%2===0){
+          ghosts.forEach(g=>{
+            if(g.house){
+              // salir de la casa: ir a la columna central y subir por la puerta
+              if(g.y<=11){ g.house=false; return; }
+              if(g.x!==13){ g.x += g.x<13?1:-1; }
+              else { g.y--; }
+              return;
+            }
+            const dirs=shufflePac([{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}]);
+            const opts=dirs.filter(d=>!isWall(g.x+d.dx,g.y+d.dy));
+            if(opts.length){
+              const d=opts[0];
+              g.x=(g.x+d.dx+COLS)%COLS; g.y+=d.dy; g.dx=d.dx; g.dy=d.dy;
+            }
+          });
+        }
+        ghosts.forEach(g=>{
+          if(g.x===pac.x && g.y===pac.y){
+            pacLives--;
+            pac.x=1; pac.y=1; pac.dx=0; pac.dy=0; pac.nextDx=0; pac.nextDy=0;
+            if(pacLives<=0) endPac();
+          }
+        });
+        if(pills.every(p=>p.eaten)){ pacScore+=500; endPac(true); }
+        tick++;
       }
-      if (pac.dx||pac.dy){
-        const nx=pac.x+pac.dx, ny=pac.y+pac.dy;
-        if (!isWall(nx,ny)){ pac.x=nx; pac.y=ny; }
-        else { pac.dx=0; pac.dy=0; }
-      }
-      // eat
-      const pill = pills.find(p=>!p.eaten && p.x===pac.x && p.y===pac.y);
-      if (pill){ pill.eaten=true; pacScore+=10; }
-      // ghosts move every other tick
-      if (tick%2===0) ghosts.forEach(g=>{
-        // random valid direction
-        const dirs=[{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
-        let opts=dirs.filter(d=>!isWall(g.x+d.dx,g.y+d.dy));
-        if (opts.length){ const d=opts[Math.floor(Math.random()*opts.length)]; g.x+=d.dx; g.y+=d.dy; g.dx=d.dx; g.dy=d.dy; }
-      });
-      // collision
-      ghosts.forEach(g=>{
-        if (g.x===pac.x && g.y===pac.y){ pacLives--; pac.x=10; pac.y=10; pac.dx=0; pac.dy=0; if (pacLives<=0) endPac(); }
-      });
-      // win
-      if (pills.every(p=>p.eaten)){ pacScore+=500; endPac(true); }
-      tick++;
-      document.getElementById('pacInfo').textContent = `Score ${pacScore} · Vidas ${pacLives} · Record ${pacHigh}`;
+      updatePacHud();
       drawPac();
-      if (pacLives>0 && !pills.every(p=>p.eaten)) pacAnim=requestAnimationFrame(step);
+      if(pacLives>0 && !pills.every(p=>p.eaten)) pacAnim=requestAnimationFrame(step);
     }
-    step();
+    requestAnimationFrame(step);
   }
+
   function endPac(win){
     pacRunning=false;
     if (pacAnim) cancelAnimationFrame(pacAnim);
     if (pacScore > pacHigh){ pacHigh=pacScore; localStorage.setItem('ttw-pac-high', pacHigh); }
+    updatePacHud();
     const info=document.getElementById('pacInfo');
     if (info) info.textContent = (win?'¡GANASTE! ':'GAME OVER ') + `Score ${pacScore} · Record ${pacHigh} · Enter para reintentar`;
   }
@@ -354,16 +476,27 @@
     function step(){
       if (!brickRunning) return;
       ball.x+=ball.dx; ball.y+=ball.dy;
-      if (ball.x<ball.r || ball.x>brickCanvas.width-ball.r) ball.dx*=-1;
-      if (ball.y<ball.r) ball.dy*=-1;
+      if (ball.x<ball.r){ ball.x=ball.r; ball.dx=Math.abs(ball.dx); }
+      if (ball.x>brickCanvas.width-ball.r){ ball.x=brickCanvas.width-ball.r; ball.dx=-Math.abs(ball.dx); }
+      if (ball.y<ball.r){ ball.y=ball.r; ball.dy=Math.abs(ball.dy); }
       // paddle
-      if (ball.y+ball.r >= brickCanvas.height-20 && ball.x >= paddle.x && ball.x <= paddle.x+paddle.w) ball.dy*=-1;
+      if (ball.dy > 0 && ball.y+ball.r >= brickCanvas.height-20 && ball.y-ball.r <= brickCanvas.height-10 && ball.x >= paddle.x && ball.x <= paddle.x+paddle.w) {
+        ball.dy = -Math.abs(ball.dy);
+        ball.y = brickCanvas.height-20-ball.r;
+      }
       if (ball.y > brickCanvas.height){ brickLives--; ball.x=160; ball.y=200; ball.dy=-2; if (brickLives<=0){ endBrick(); return; } }
       // bricks
       bricks.forEach(b=>{
         if(!b.alive) return;
-        if (ball.x>b.x && ball.x<b.x+b.w && ball.y>b.y && ball.y<b.y+b.h){
-          b.alive=false; ball.dy*=-1; brickScore+=10;
+        if (ball.x+ball.r > b.x && ball.x-ball.r < b.x+b.w && ball.y+ball.r > b.y && ball.y-ball.r < b.y+b.h) {
+          b.alive=false; brickScore+=10;
+          const ol = (ball.x+ball.r) - b.x;
+          const orr = (b.x+b.w) - (ball.x-ball.r);
+          const ot = (ball.y+ball.r) - b.y;
+          const ob = (b.y+b.h) - (ball.y-ball.r);
+          const m = Math.min(ol,orr,ot,ob);
+          if (m===ol || m===orr) ball.dx *= -1;
+          else ball.dy *= -1;
         }
       });
       if (bricks.every(b=>!b.alive)){ brickScore+=100; endBrick(true); return; }
